@@ -1,0 +1,76 @@
+!GET /
+todos == [];
+visibleTodos == [];
+filter == :all;
+remainingCount == 0;
+completedCount == 0;
+allCompleted == false;
+canClearCompleted == false;
+editingTodo == nil;
+editDraft == nil;
+
+# Add a todo
+addTodo("Buy milk");
+todos == [Todo(:active, "Buy milk")];
+visibleTodos == [Todo(:active, "Buy milk")];
+remainingCount == 1;
+
+# Mark done
+markDone(0_visibleTodo);
+todos == [Todo(:completed, "Buy milk")];
+remainingCount == 0;
+completedCount == 1;
+allCompleted == true;
+canClearCompleted == true;
+
+# Mark undone
+markUndone(0_visibleTodo);
+todos == [Todo(:active, "Buy milk")];
+remainingCount == 1;
+completedCount == 0;
+
+# Add more
+addTodo("Walk dog");
+markDone(1_visibleTodo);
+
+# Filter
+setFilter(:active);
+filter == :active;
+visibleTodos == [Todo(:active, "Buy milk")];
+
+setFilter(:completed);
+filter == :completed;
+visibleTodos == [Todo(:completed, "Walk dog")];
+
+setFilter(:all);
+filter == :all;
+
+# Editing
+startEditing(0_visibleTodo);
+editingTodo == 0_visibleTodo;
+setEditLabel("Buy oat milk");
+saveEdit();
+editingTodo == nil;
+editDraft == nil;
+
+# Cancel edit
+startEditing(0_visibleTodo);
+setEditLabel("changed");
+cancelEdit();
+editingTodo == nil;
+
+# Remove
+removeTodo(1_visibleTodo);
+
+# Bulk operations
+addTodo("A");
+addTodo("B");
+markAllDone();
+allCompleted == true;
+markAllUndone();
+allCompleted == false;
+
+# Clear completed
+markDone(0_visibleTodo);
+clearCompleted();
+canClearCompleted == false;
