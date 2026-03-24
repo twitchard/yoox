@@ -79,6 +79,36 @@ Late into the age of web frameworks, the common practice has swung to *not* sepa
 
 Yoox is an attempt to reclaim that dream.
 
+## Intent Decomposition and Component Composition
+
+Yoox's synthesis pipeline rests on a duality between **intent decomposition** and **component composition**.
+
+### Intent decomposition
+
+A user arrives at an app with a high-level goal. As they interact with the app, that goal decomposes into subgoals. Each subgoal may further decompose as the user encounters UI that reveals more structure.
+
+**Example: ordering a pizza.**
+
+1. The user's intent is: *order a pizza*.
+2. They see a list of restaurants. Now their intent decomposes into: (a) select a restaurant, (b) order a pizza from the selected restaurant.
+3. They see a search bar. Subgoal (a) further decomposes: (i) type a restaurant name into the search bar, (ii) scan results and click one.
+
+Each step reveals more structure — the user's abstract goal is progressively refined into concrete, atomic interactions.
+
+### Component composition
+
+UI components are the dual of this. Each component *fulfills* an intent:
+
+- A text input fulfills the intent "type text into a box."
+- A text input + a label reading "Restaurant name" + a button reading "Search" compose into a component that fulfills the intent "search for a restaurant."
+- That search component + a results list compose into a component that fulfills "select a restaurant."
+
+Components compose upward in the same way that intents decompose downward. The synthesis problem is to find a composition of components whose fulfilled-intent tree matches the user's decomposed-intent tree.
+
+### Why this matters
+
+This duality is what makes Yoox's approach possible. UX traces describe the *leaves* of the intent tree — the atomic interactions. Synthesis works bottom-up: it infers the intent tree from the traces, then finds a component tree that matches. The component tree *is* the UI.
+
 ## Status
 
 Experimental / research project. Not ready for production use.

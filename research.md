@@ -98,6 +98,42 @@ A 2025 survey of interactive program synthesis (2015-2024, 50 papers) found that
 
 - Survey PDF: https://assets.cureusjournals.com/artifacts/upload/review_article/pdf/5516/20250801-95152-u60hdm.pdf
 
+## 9. Solar-Lezama Lecture Notes (Program Synthesis Course)
+
+Summary of Armando Solar-Lezama's program synthesis lecture notes, organized by unit.
+
+### Unit 1: Combinatorial Search and Inductive Synthesis
+- **Lecture 1 (Intro)**: History from Turing to modern compilers. Three pillars: Intent, Invention, Adaptation.
+- **Lecture 2 (Inductive Synthesis)**: PBE (inputs/outputs only) vs PBD (includes computation trace). Yoox is closer to PBD — traces include the sequence of interactions, not just final state.
+- **Lecture 3 (Bottom-Up Search)**: Build programs from grammar terminals upward. Prune via observational equivalence (programs producing same outputs on given inputs are interchangeable).
+- **Lecture 4 (Top-Down Search)**: Programs with "holes" filled progressively. Type-directed search rules out invalid fragments early.
+- **Lecture 5 (Stochastic Search)**: MCMC methods for program search, useful for superoptimization.
+- **Lecture 6 (Version Space Algebras)**: Symbolic representation of entire program sets rather than enumerating ASTs. Foundation of SMARTedit and FlashFill.
+- **Lectures 7-8 (Sketch)**: Parametric programs P[c], requirements as constraints on c. Structural hashing and algebraic simplification reduce representation size.
+- **Lecture 9 (Solving Constraints)**: Translation to CNF, solved by SAT solvers.
+
+### Unit 2: Synthesis with Richer Specifications
+- **Lecture 10 (Functional vs Reactive Synthesis)**: Functional = input→output mapping. Reactive = continuous interaction with environment. Yoox is firmly in the reactive camp.
+- **Lecture 12 (Verification→Synthesis)**: Discovering loop invariants via parametric templates.
+- **Lecture 13 (CEGIS)**: Counter-Example Guided Inductive Synthesis — synthesizer proposes, verifier checks, counterexamples refine.
+- **Lecture 14 (SMT and SyGuS)**: SMT solvers for integers/arrays/strings. SyGuS standardizes synthesis problem format.
+- **Lectures 15-16 (Refinement Types / Synquid)**: Types decorated with logical predicates. Prunes search by rejecting incomplete programs violating the type signature.
+- **Lecture 17 (Deductive Synthesis)**: Semantics-preserving transformations of spec into implementation.
+- **Lecture 18 (Deductive+Combinatorial Hybrids)**: Combining transformation rules with combinatorial search.
+- **Lecture 19 (Abstract Interpretation)**: Abstract states (symbols for sets of concrete states) for verification and synthesis.
+
+### Unit 3: Probabilistic and Neural Synthesis
+- **Lecture 20 (Bayesian View)**: Synthesis as maximizing P(program | evidence). Handles underspecification.
+- **Lecture 21 (Synthesis Under Distribution)**: Finding shortest or most likely program under a distribution.
+- **Lecture 22 (Neural Guided Synthesis)**: NLP techniques (n-grams, neural nets) for program distributions. Neural networks predict fragments, symbolic solvers fill holes.
+
+### Relevance to Yoox
+- Yoox is **PBD** (Programming by Demonstration), not PBE — traces include interaction sequences.
+- Yoox is **reactive synthesis** — continuous user-environment interaction, not one-shot input→output.
+- **Version Space Algebras** could represent the set of all state machines consistent with traces.
+- **CEGIS** could drive iterative refinement: synthesize a candidate app, find a trace it doesn't satisfy, refine.
+- **Top-down search with holes** maps naturally to Yoox's component composition: start with the top-level intent, decompose into sub-intents (holes), fill with components.
+
 ---
 
 ## Key Takeaways for Yoox
