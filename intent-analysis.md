@@ -1,93 +1,44 @@
 # Intent Decomposition / Component Composition: Worked Examples
 
-## Primitive Components and Their Generic Intents
+## The Atomic Intents
 
-Before looking at any specific app, we need the truly primitive building blocks. Each has a *generic* intent — it doesn't know what app it's in.
+There are only three things a user can do with a piece of UI:
 
-| Primitive | Generic intent |
+| Atomic intent | What it means |
 |---|---|
-| **button** | "trigger something" |
-| **text input** | "supply text" |
-| **label** | "name a thing" / "describe a thing" |
-| **display** | "observe a value" |
-| **checkbox** | "toggle a boolean" |
-| **list** | "repeat something for each item in a collection" |
+| `see(v)` | Observe a value |
+| `do(a)` | Trigger a state change |
+| `give(T)` | Supply a value of some type T |
 
-These are maximally generic. A bare button doesn't know *what* it triggers. A bare text input doesn't know *what* the text is for. Meaning comes from composition.
+Everything else — every widget, every form, every app — is built by composing these three with a small set of operators.
 
-## Composition Operators
+## The Composition Operators
 
-The interesting part: how generic intents become specific.
+| Operator | Signature | What it does |
+|---|---|---|
+| `name(n, I)` | string × intent → intent | Narrows a generic intent to a specific one. This is how meaning enters the system. |
+| `bind(give(T), do(a))` | supply × action → intent | Feeds the supplied value into the action as its argument. This is what makes a form a form. |
+| `both(I₁, I₂)` | intent × intent → intent | Fuses two intents into one component. The component simultaneously fulfills both. |
+| `group(I₁, ..., Iₙ)` | intent* → intent | Juxtaposes intents. The composite intent is the union. |
+| `each(collection, I)` | collection × intent → intent | Repeats an intent per item, binding each instance to an index. |
+| `pick(I₁, ..., Iₙ)` | intent* → intent | Choose exactly one from a set of intents. Mutually exclusive. |
+| `when(condition, I)` | predicate × intent → intent | Intent is only available/visible when condition holds. |
 
-### Labeling: generic → specific
+### What's NOT a primitive
 
-A **label** applied to a component narrows its intent:
+Things that look like primitives but are actually composed:
 
-```
-label("increment") + button
-  "name a thing"   + "trigger something"
-  ────────────────────────────────────────
-  = labeled button: "trigger increment"
-```
+**Checkbox** = `both(see(bool), do(toggle))`
+A checkbox is not atomic. It *simultaneously* lets you observe a boolean and trigger its negation. It fuses `see` and `do` on the same piece of state. That's `both`.
 
-The label is doing real semantic work. "Trigger something" is useless. "Trigger increment" is a real user intent. The label is the bridge.
+**Selector / radio group** = `pick(do(a₁), do(a₂), ..., do(aₙ))`
+A selector is not a primitive widget. It's `pick` applied to a set of actions. "Choose one of these options" is composed from "trigger A" + "trigger B" + ... + mutual exclusion.
 
-Similarly:
+**Form** = `bind(give(T), do(a))`
+A form is not a container with inputs and a button. It's the *binding* of a supplied value to an action. The text input fulfills `give(text)`. The button fulfills `do(submit)`. The form's `bind` is what wires the text input's value into the submit action's argument. Without `bind`, they're just two widgets sitting next to each other.
 
-```
-label("count") + display(0)
-  "name a thing" + "observe a value"
-  ──────────────────────────────────
-  = labeled display: "observe the count"
-```
-
-### Grouping: parts → whole
-
-Placing components next to each other in a group creates a composite intent:
-
-```
-labeled-display("count", 0) + labeled-button("increment") + labeled-button("decrement")
-  "observe the count"       + "trigger increment"          + "trigger decrement"
-  ──────────────────────────────────────────────────────────────────────────────────
-  = counter widget: "track and adjust a count"
-```
-
-### Form: text input + submit → "submit specified information"
-
-A **form** is a specific composition pattern: one or more labeled inputs + a submit button. It turns "supply text" + "trigger something" into "submit specified information."
-
-```
-label("task") + text-input + label("submit") + button
-  "name"      + "supply text" + "name"       + "trigger something"
-  ──────────────────────────────────────────────────────────────────
-  = form: "submit a task description"
-```
-
-The form is more than the sum of its parts. A bare text input and a bare button next to each other don't *mean* "submit information." The form pattern — input feeds into the button's action — creates that meaning. The label on the input says *what kind* of information. The button's label can be generic ("submit") or specific ("Add todo").
-
-### Repetition: list + template → "do something for each item"
-
-A **list** takes a component template and repeats it for each item in a collection, binding each instance to an item:
-
-```
-list(todos) + todo-item-template
-  "repeat for each" + "see and act on one todo"
-  ──────────────────────────────────────────────
-  = todo list: "see and act on all todos"
-```
-
-Each repeated instance gets an item index, which is how per-item actions (`markDone(0_visibleTodo)`) know which item they target.
-
-### Conditional: mode guard → "do this only when..."
-
-A **conditional** shows a component only when some condition holds:
-
-```
-when(editingTodo != nil) + edit-overlay
-  "only when editing"    + "edit a todo's label"
-  ─────────────────────────────────────────────
-  = conditional edit: "edit a todo's label (when in edit mode)"
-```
+**Labeled button** = `name("increment", do(increment))`
+A button with a label is not a primitive. The bare button fulfills only the generic `do(???)`. The name operator is what takes it from "trigger something" to "trigger increment."
 
 ---
 
@@ -104,222 +55,268 @@ decrement();
 count == 0;
 ```
 
-### Intent Decomposition (top-down)
+### Reading intents off the trace
 
-The user wants to **track and adjust a count**:
+Each line maps to an atomic intent:
 
-```
-track and adjust a count
-├── observe the current count
-├── increase the count
-└── decrease the count
-```
+| Trace element | Atomic intent | Why |
+|---|---|---|
+| `count == 0` | `see(count)` | Asserting a value means the user can observe it |
+| `increment()` | `do(increment)` | Calling a no-arg action means the user can trigger it |
+| `decrement()` | `do(decrement)` | Same |
 
-### Component Composition (bottom-up)
+The names `count`, `increment`, `decrement` are present in the trace itself. They become arguments to `name`.
 
-Start from the primitives and build up:
-
-**Layer 0 — bare primitives:**
-- `display` — "observe a value"
-- `button` — "trigger something"
-- `button` — "trigger something"
-
-These are meaningless on their own. Three widgets with no specific purpose.
-
-**Layer 1 — labeling gives meaning:**
-- `label("count") + display(count)` → "observe the count"
-- `label("increment") + button(increment)` → "trigger increment" = "increase the count"
-- `label("decrement") + button(decrement)` → "trigger decrement" = "decrease the count"
-
-Now each component has a specific intent. The label did all the work.
-
-**Layer 2 — grouping gives wholeness:**
-- group all three → **counter widget** → "track and adjust a count"
+### Composition (bottom-up)
 
 ```
-counter widget                                     ← "track and adjust a count"
-├── label("count") + display(count)                ← "observe the count"
-├── label("increment") + button(increment)         ← "increase the count"
-└── label("decrement") + button(decrement)         ← "decrease the count"
+                         ╭──────────────────────────────╮
+                         │ name("count", see(count))    │  "observe the count"
+                         ├──────────────────────────────┤
+  group ─────────────────│ name("inc", do(increment))   │  "increase the count"
+                         ├──────────────────────────────┤
+                         │ name("dec", do(decrement))   │  "decrease the count"
+                         ╰──────────────────────────────╯
+                           = "track and adjust a count"
 ```
 
-### What synthesis infers from the trace
+That's it. Three atomic intents, three `name` applications, one `group`. No `bind`, no `each`, no `pick`, no `when`, no `both`. The counter uses only two of the seven operators.
 
-The trace gives us:
-- `count == 0` / `count == 1` → there's an observable called `count` (numeric)
-- `increment()` → there's a no-arg action called `increment`
-- `decrement()` → there's a no-arg action called `decrement`
+### Rendered
 
-Synthesis assigns components:
-- Observable → display primitive
-- No-arg action → button primitive
-- Names (`count`, `increment`, `decrement`) → labels
+Each composed intent maps to a concrete widget:
 
-That's the whole story. The counter is one layer of labeling + one grouping.
+- `name(n, see(v))` → a label `n` next to a text display of `v`
+- `name(n, do(a))` → a button labeled `n` that calls `a`
+- `group(...)` → a container (div, panel, etc.)
+
+```
+┌─────────────────────────┐
+│ count: 0                │  ← name("count", see(count))
+│ [increment] [decrement] │  ← name("inc", do(inc)) + name("dec", do(dec))
+└─────────────────────────┘     group(...)
+```
 
 ---
 
 ## 2. Todo App
 
-### Intent Decomposition (top-down)
+### Reading intents off the traces
+
+The traces in `examples.md` give us these atomic intents:
+
+| Trace pattern | Atomic intent | Operator implied |
+|---|---|---|
+| `todos == [...]` | `see(todos)` | — |
+| `remainingCount == 1` | `see(remainingCount)` | — |
+| `filter == :active` | `see(filter)` | — |
+| `addTodo("Buy milk")` | `do(addTodo)` with text arg | `bind` — the text arg means give(text) is bound to the action |
+| `markDone(0_visibleTodo)` | `do(markDone)` with index arg | `each` — the index arg means this is per-item |
+| `markUndone(0_visibleTodo)` | `do(markUndone)` with index arg | `each` + `both` (same position as markDone → toggle) |
+| `removeTodo(0_visibleTodo)` | `do(removeTodo)` with index arg | `each` |
+| `markAllDone()` | `do(markAllDone)` no arg | — |
+| `clearCompleted()` | `do(clearCompleted)` no arg | — |
+| `setFilter(:active)` | `do(setFilter)` with enum arg | `pick` — enum arg means choose from fixed set |
+| `startEditing(0_visibleTodo)` | `do(startEditing)` with index | `when` — editing introduces a mode |
+| `setEditLabel("...")` | `give(text)` | `bind` (to saveEdit) |
+| `saveEdit()` | `do(saveEdit)` | — |
+| `cancelEdit()` | `do(cancelEdit)` | — |
+
+**The trace signatures tell us which operators to use:**
+
+- **Text argument** → `bind(give(text), do(action))` → a form
+- **Index argument** → `each(collection, ...)` → per-item repetition
+- **Enum argument** → `pick(do(a₁), ..., do(aₙ))` → a selector
+- **Complementary actions on same state** (markDone/markUndone) → `both(see, do)` → a toggle
+- **Mode-introducing action** (startEditing) → `when(mode, ...)` → conditional
+
+### Composition (bottom-up)
+
+**Step 1: Name the atomic intents.**
 
 ```
-manage a list of tasks
-├── add a task
-│   ├── describe the task (supply text)
-│   └── submit
-├── view tasks
-│   ├── see each task (label + status)
-│   ├── see summary (remaining count, completed count)
-│   └── see which filter is active
-├── act on a single task
-│   ├── toggle its completion
-│   ├── remove it
-│   └── edit its label
-│       ├── enter edit mode
-│       ├── type new label
-│       └── confirm or cancel
-├── act on all tasks
-│   ├── mark all done / undone
-│   └── clear completed
-└── filter tasks
-    └── select: all | active | completed
+see(count)       →  name("remaining", see(remainingCount))       "observe remaining count"
+see(count)       →  name("completed", see(completedCount))       "observe completed count"
+do(action)       →  name("Clear completed", do(clearCompleted))  "trigger clear completed"
+do(action)       →  name("Delete", do(removeTodo))               "trigger delete"
+do(action)       →  name("Save", do(saveEdit))                   "trigger save"
+do(action)       →  name("Cancel", do(cancelEdit))               "trigger cancel"
 ```
 
-### Component Composition (bottom-up)
+**Step 2: `both` — fuse see + do on the same state.**
 
-Here the layering is richer, because composition operators beyond labeling come into play.
-
-**Layer 0 — bare primitives:**
-
-We need: displays, buttons, text inputs, checkboxes, a list. All generic, no meaning yet.
-
-**Layer 1 — labeling gives meaning:**
+`markDone` and `markUndone` operate on the same boolean (`todo.status`). The user both *sees* the status and *toggles* it. That's `both`:
 
 ```
-label("task") + text-input              → "describe a task"
-label("Add") + button                   → "trigger add"
-label("count") + display(remainingCount)→ "observe remaining count"
-label("Delete") + button                → "trigger delete"
-label("All") + button                   → "trigger show-all"
-label("Active") + button                → "trigger show-active"
-label("Completed") + button             → "trigger show-completed"
-label("Clear completed") + button       → "trigger clear-completed"
-checkbox + label(todo.label)            → "toggle completion of [this task]" + "see [this task]"
+both(see(todo.status), do(toggleStatus))
+  = "see and toggle this task's completion"
 ```
 
-Each component now has a specific intent, but they're still independent pieces.
+This is what renders as a checkbox. The checkbox isn't a primitive — it's `both(see, do)`.
 
-**Layer 2 — form composition ("submit specified information"):**
-
-```
-(label("task") + text-input) + (label("Add") + button)
-  "describe a task"          + "trigger add"
-  ───────────────────────────────────────────────
-  = new-todo form: "submit a new task"
-```
-
-This is the key move. The form pattern binds the text input's value to the button's action. "Describe a task" + "trigger add" fuse into "add a described task." Neither piece means this alone.
-
-Similarly for editing:
+Similarly, `markAllDone`/`markAllUndone` operate on the aggregate boolean `allCompleted`:
 
 ```
-(text-input(editDraft)) + (save-on-enter) + (cancel-on-escape)
-  "supply replacement text" + "confirm" + "cancel"
-  ─────────────────────────────────────────────────
-  = edit form: "submit an edited label, or cancel"
+both(see(allCompleted), do(toggleAll))
+  = "see and toggle whether all tasks are complete"
 ```
 
-**Layer 3 — per-item composition (grouping within a repeated context):**
+**Step 3: `bind` — form composition.**
+
+`addTodo("Buy milk")` takes a text argument. That means somewhere there's a `give(text)` (a text input) whose value gets bound to `addTodo`:
 
 ```
-checkbox(todo.status) + label(todo.label) + labeled-button("Delete", removeTodo)
-  "toggle this task's completion" + "see this task" + "remove this task"
-  ──────────────────────────────────────────────────────────────────────
-  = todo-item: "see and act on one task"
+bind(name("task", give(text)), do(addTodo))
+  = "supply a task description and add it"
 ```
 
-Plus a conditional:
+This is a form. The `bind` is what wires the text input's value into the action. Without `bind`, you'd have a text input and a button that don't know about each other.
+
+Similarly, the edit flow: `setEditLabel("...")` is `give(text)`, and it's bound to `saveEdit()`:
 
 ```
-todo-item + when(editingTodo == this) { edit-form }
-  "see and act on one task" + "edit this task's label (when editing)"
-  ──────────────────────────────────────────────────────────────────
-  = todo-item-with-edit: "fully interact with one task"
+bind(give(text), name("Save", do(saveEdit)))
+  = "supply a new label and save it"
 ```
 
-**Layer 4 — repetition (list of items):**
+**Step 4: `group` — per-item composition.**
+
+For each visible todo, the user can: see it, toggle it, delete it, and (conditionally) edit it. Group these:
 
 ```
-list(visibleTodos) + todo-item-with-edit
-  "for each visible todo" + "fully interact with one task"
-  ────────────────────────────────────────────────────────
-  = todo-list: "see and act on all visible tasks"
+group(
+  both(see(todo.status), do(toggleStatus)),          "see and toggle completion"
+  name(todo.label, see(todo)),                       "see this task"
+  name("Delete", do(removeTodo)),                    "trigger delete"
+)
+  = "see and act on one task"
 ```
 
-The list operator does something specific: it binds each instance to an index, which is how `markDone(0_visibleTodo)` knows which item to target.
+**Step 5: `when` — conditional edit mode.**
 
-**Layer 5 — selection composition:**
-
-```
-labeled-button("All") + labeled-button("Active") + labeled-button("Completed")
-  "trigger show-all"   + "trigger show-active"    + "trigger show-completed"
-  ─────────────────────────────────────────────────────────────────────────────
-  = filter-bar (selector): "choose which tasks to see"
-```
-
-A selector is a group of labeled buttons where exactly one is active. It turns multiple "trigger X" intents into a "choose among X" intent.
-
-**Layer 6 — the whole app (grouping everything):**
+The edit form only appears when `editingTodo == thisItem`:
 
 ```
-todo app                                              ← "manage a list of tasks"
-├── new-todo form                                     ← "add a task"              [Layer 2: form]
-│   ├── label("task") + text-input                    ← "describe a task"         [Layer 1: labeling]
-│   └── label("Add") + button(addTodo)                ← "trigger add"             [Layer 1: labeling]
-├── toggle-all checkbox                               ← "mark all done/undone"    [Layer 1: labeling]
-├── todo-list                                         ← "see and act on all tasks"[Layer 4: repetition]
-│   └── todo-item-with-edit (repeated)                ← "interact with one task"  [Layer 3: per-item]
-│       ├── checkbox(status)                          ← "toggle completion"        [Layer 1: labeling]
-│       ├── label(todo.label)                         ← "see this task"            [Layer 1: labeling]
-│       ├── label("Delete") + button(removeTodo)      ← "remove this task"         [Layer 1: labeling]
-│       └── when(editing) { edit-form }               ← "edit label (when editing)"[Layer 2: form + conditional]
-│           ├── text-input(editDraft)                 ← "type new label"           [Layer 0: primitive]
-│           ├── save-on-enter                         ← "confirm"                  [Layer 0: primitive]
-│           └── cancel-on-escape                      ← "cancel"                   [Layer 0: primitive]
-├── filter-bar                                        ← "choose which tasks to see"[Layer 5: selector]
-│   ├── label("All") + button(setFilter(:all))        ← "show all"                [Layer 1: labeling]
-│   ├── label("Active") + button(setFilter(:active))  ← "show active"             [Layer 1: labeling]
-│   └── label("Completed") + button(setFilter(:done)) ← "show completed"          [Layer 1: labeling]
-├── summary-bar                                       ← "see summary"              [Layer 1: labeling]
-│   ├── label("remaining") + display(remainingCount)  ← "see remaining count"     [Layer 1: labeling]
-│   └── label("completed") + display(completedCount)  ← "see completed count"     [Layer 1: labeling]
-└── label("Clear completed") + button(clearCompleted) ← "clear completed"          [Layer 1: labeling]
+when(editing == this,
+  group(
+    bind(give(text), name("Save", do(saveEdit))),    "supply new label and save"
+    name("Cancel", do(cancelEdit))                   "trigger cancel"
+  )
+)
+  = "edit this task's label (only when in edit mode)"
+```
+
+Note: `cancelEdit` is NOT inside the `bind`. It doesn't use the text input's value — it discards it. So it's a sibling in the `group`, not part of the `bind`.
+
+**Step 6: `each` — repetition over the list.**
+
+Every action that takes an index arg (`markDone(0_visibleTodo)`, `removeTodo(0_visibleTodo)`, etc.) is inside a repeated context:
+
+```
+each(visibleTodos,
+  group(
+    both(see(todo.status), do(toggleStatus)),
+    name(todo.label, see(todo)),
+    name("Delete", do(removeTodo)),
+    when(editing == this,
+      group(
+        bind(give(text), name("Save", do(saveEdit))),
+        name("Cancel", do(cancelEdit))
+      )
+    )
+  )
+)
+  = "see and act on all visible tasks"
+```
+
+`each` introduces the item index. That's why `markDone(0_visibleTodo)` has the `0_visibleTodo` — it's the index bound by `each`.
+
+**Step 7: `pick` — filter selection.**
+
+`setFilter(:active)` takes an enum argument. The trace shows three values: `:all`, `:active`, `:completed`. That's `pick`:
+
+```
+pick(
+  name("All",       do(setFilter(:all))),
+  name("Active",    do(setFilter(:active))),
+  name("Completed", do(setFilter(:completed)))
+)
+  = "choose which tasks to see"
+```
+
+`pick` means exactly one is selected at a time. That's a selector / tab bar / radio group.
+
+**Step 8: `group` — the whole app.**
+
+```
+group(                                                           "manage a list of tasks"
+
+  bind(name("task", give(text)), do(addTodo)),                     "add a task"
+                                                                   ├─ bind: form
+                                                                   ├─ name + give: labeled text input
+                                                                   └─ do: submit
+
+  both(see(allCompleted), do(toggleAll)),                          "toggle all completion"
+                                                                   └─ both: checkbox
+
+  each(visibleTodos,                                               "see and act on all tasks"
+    group(                                                           └─ each: repetition
+      both(see(todo.status), do(toggle)),                                ├─ both: checkbox
+      name(todo.label, see(todo)),                                       ├─ name + see: label
+      name("Delete", do(removeTodo)),                                    ├─ name + do: button
+      when(editing == this,                                              └─ when: conditional
+        group(                                                               └─ group
+          bind(give(text), name("Save", do(saveEdit))),                          ├─ bind: form
+          name("Cancel", do(cancelEdit))                                         └─ name + do: button
+        )
+      )
+    )
+  ),
+
+  pick(                                                            "choose filter"
+    name("All",       do(setFilter(:all))),                        └─ pick: selector
+    name("Active",    do(setFilter(:active))),
+    name("Completed", do(setFilter(:completed)))
+  ),
+
+  group(                                                           "see summary"
+    name("remaining", see(remainingCount)),                        └─ group
+    name("completed", see(completedCount))                             ├─ name + see: display
+  ),                                                                   └─ name + see: display
+
+  name("Clear completed", do(clearCompleted))                      "clear completed"
+                                                                   └─ name + do: button
+)
 ```
 
 ---
 
-## The Composition Operators, Summarized
+## Operator Usage Comparison
 
-| Operator | What it does to intent |
-|---|---|
-| **label** | Narrows a generic intent to a specific one. "Trigger something" → "trigger increment." This is the most fundamental operator — it's how meaning enters the system. |
-| **form** | Binds inputs to an action. "Supply text" + "trigger something" → "submit specified information." The binding is the new thing — the text input's value becomes the action's argument. |
-| **group** | Juxtaposes intents into a composite. "Observe count" + "trigger increment" + "trigger decrement" → "track and adjust a count." |
-| **list (repetition)** | Repeats a template per item. "Interact with one task" → "interact with all tasks." Introduces item indexing. |
-| **selector** | Makes a group of triggers mutually exclusive. "Trigger A" + "trigger B" + "trigger C" → "choose among A, B, C." |
-| **conditional** | Guards a component behind a condition. "Edit a label" → "edit a label, when in edit mode." |
+| Operator | Counter | Todo |
+|---|---|---|
+| `name` | 3× | ~12× |
+| `group` | 1× | 4× |
+| `both` | — | 2× (checkbox = see + do) |
+| `bind` | — | 2× (add form, edit form) |
+| `each` | — | 1× (todo list) |
+| `pick` | — | 1× (filter selector) |
+| `when` | — | 1× (edit mode) |
 
-### Why this matters for synthesis
+The counter uses 2 of 7 operators. The todo app uses all 7. That's a precise measure of complexity.
 
-Given a trace, synthesis must:
+---
 
-1. Identify the **primitives** needed (observables → displays, actions → buttons, text arguments → text inputs, boolean toggles → checkboxes)
-2. Apply **labeling** — every name in the trace (`count`, `increment`, `addTodo`) becomes a label that gives a primitive its specific meaning
-3. Recognize **form patterns** — when an action takes a text argument (`addTodo("Buy milk")`), that's a text input bound to a button, i.e. a form
-4. Recognize **repetition** — when actions take an item index (`markDone(0_visibleTodo)`), there's a list with per-item components
-5. Recognize **selection** — when an action takes an enum (`setFilter(:active)`), there's a selector
-6. Recognize **modes** — when state guards visibility (`editingTodo != nil`), there's a conditional
-7. **Group** everything into the final layout
+## The Rosetta Stone: Trace Patterns → Operators
 
-The key insight: **composition operators are what turn traces into UI**. The trace gives you the primitives and their names. The operators tell you how to wire them together. Each operator corresponds to a specific pattern in the trace language (text arg → form, index arg → list, enum arg → selector, guard condition → conditional, name → label).
+| Pattern in trace | Operator | Component |
+|---|---|---|
+| `name == value` (assertion) | `see` + `name` | labeled display |
+| `action()` (no args) | `do` + `name` | labeled button |
+| `action("text")` (text arg) | `bind(give(text), do)` | form (text input + submit) |
+| `action(i_collection)` (index arg) | `each(collection, ...)` | list with per-item controls |
+| `action(:enumVal)` (enum arg) | `pick(do(a₁), ..., do(aₙ))` | selector / tabs |
+| `actionA(i)` + `actionB(i)` (complementary pair on same state) | `both(see, do)` | checkbox / toggle |
+| State that gates visibility (`editingTodo`) | `when(condition, ...)` | conditional rendering |
+
+This table is the core of synthesis. Read a trace, pattern-match against the left column, emit the operator in the middle column, render the component in the right column.
