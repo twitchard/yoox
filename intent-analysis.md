@@ -320,3 +320,181 @@ The counter uses 2 of 7 operators. The todo app uses all 7. That's a precise mea
 | State that gates visibility (`editingTodo`) | `when(condition, ...)` | conditional rendering |
 
 This table is the core of synthesis. Read a trace, pattern-match against the left column, emit the operator in the middle column, render the component in the right column.
+
+---
+
+## The Assembly Language: Incremental Refinement with Holes
+
+The intent algebra above describes *finished* compositions — fully specified, no ambiguity. But synthesis doesn't start with a finished product. It starts with almost nothing and gradually fills in details. We need a language for the *process* of assembly, where partially-built things have explicit **holes**.
+
+### Operations
+
+| Operation | What it does |
+|---|---|
+| `newComponent(X)` | Introduces a component `X` with every property unspecified. X has holes for: type, label, associations, action, visibility. |
+| `button(X)` | Fills X's type hole: X is a button. (Eliminates: text input, display, checkbox, ...) |
+| `textInput(X)` | Fills X's type hole: X is a text input. |
+| `display(X)` | Fills X's type hole: X is a display/readout. |
+| `label(X, n)` | Fills X's label hole with `n`, drawn from the intent universe. Attaches X to the *idea* of `n`. |
+| `associate(X, Y)` | Declares that X and Y are semantically linked — the user should understand them as related. (X submits Y's value, X controls Y's visibility, etc.) |
+| `action(X, endpoint)` | Fills X's action hole, drawn from the data universe. Connects X to a concrete state transition or endpoint. |
+
+### A component is a record with holes
+
+```
+newComponent(X)
+  X = { type: ?, label: ?, assoc: ?, action: ?, visibility: ? }
+
+button(X)
+  X = { type: Button, label: ?, assoc: ?, action: ?, visibility: ? }
+
+label(X, "submit")
+  X = { type: Button, label: "submit", assoc: ?, action: ?, visibility: ? }
+
+newComponent(Y)
+  Y = { type: ?, label: ?, assoc: ?, action: ?, visibility: ? }
+
+textInput(Y)
+  Y = { type: TextInput, label: ?, assoc: ?, action: ?, visibility: ? }
+
+label(Y, "bio")
+  Y = { type: TextInput, label: "bio", assoc: ?, action: ?, visibility: ? }
+
+associate(X, Y)
+  X = { type: Button, label: "submit", assoc: {Y}, action: ?, visibility: ? }
+  Y = { type: TextInput, label: "bio", assoc: {X}, action: ?, visibility: ? }
+
+action(X, POST /bios)
+  X = { type: Button, label: "submit", assoc: {Y}, action: POST /bios, visibility: ? }
+```
+
+Each `?` is a hole. Each operation fills exactly one hole (or adds a relation). The search space is the product of all remaining holes' possible values.
+
+### Three universes, three kinds of holes
+
+The holes live in different universes, and values that fill them are sourced from different universes:
+
+| Hole | Lives in | Filled from | Examples |
+|---|---|---|---|
+| type | Widget universe | Widget universe | button, textInput, display |
+| label | Widget ↔ Intent boundary | Intent universe | "submit", "increment", "bio", "task" |
+| association | Widget ↔ Widget | Widget universe (relational) | associate(X, Y) |
+| action | Widget ↔ Data boundary | Data universe | POST /bios, state transition |
+| visibility | Widget ↔ Data boundary | Data universe (predicates) | when(editing), always |
+
+The universes constrain each other:
+
+- **Widget type constrains intent**: A `button` can hold `do(a)` but not `see(v)`. A `display` can hold `see(v)` but not `do(a)`.
+- **Intent constrains data**: The label "submit" implies a state transition. The label "bio" implies a string-typed value.
+- **Data constrains widget**: If an action takes a `string` argument, there must be a `textInput` somewhere, and an `associate` linking them.
+- **Association constrains layout**: `associate(X, Y)` means X and Y must be presented so the user grasps their semantic link.
+
+### Synthesis = filling holes consistently across all three universes
+
+Given a partial assembly (some holes filled by the user via traces or explicit specification), synthesis searches over completions that are *consistent*: every hole is filled with a value from the right universe, and the cross-universe constraints all hold.
+
+Traces are observations that constrain the search:
+
+```
+addTodo("Buy milk")
+```
+
+This single line tells synthesis:
+- There exists a component with action `addTodo` (data universe)
+- That action takes a string argument, so there's a `textInput` somewhere (widget universe)
+- The text input and the action-triggering component are `associate`d (widget universe)
+- The action is labeled something like "add" or "submit" (intent universe)
+- The text input is labeled something like "task" or "todo" (intent universe)
+
+Each trace line eliminates swaths of the search space.
+
+### Assembly language ↔ intent algebra
+
+These are dual perspectives on the same thing:
+
+| Intent algebra (finished) | Assembly language (process) |
+|---|---|
+| `name("submit", do(addTodo))` | `newComponent(X); button(X); label(X, "submit"); action(X, addTodo)` |
+| `name("task", give(text))` | `newComponent(Y); textInput(Y); label(Y, "task")` |
+| `bind(give(text), do(addTodo))` | `associate(X, Y)` |
+| `see(count)` | `newComponent(Z); display(Z); label(Z, "count"); action(Z, read(count))` |
+
+The intent algebra is declarative — it says what the finished composition *is*. The assembly language is operational — it says how you *get there*, step by step, with explicit holes at each stage.
+
+A fully assembled widget tree (no `?`s) corresponds exactly to a fully composed intent tree. A partially assembled tree (some `?`s) corresponds to a *family* of intent trees — the search space.
+
+### Worked example: building the bio form step by step
+
+```
+newComponent(X)       -- X is something. Could be anything.
+newComponent(Y)       -- Y is something. Could be anything.
+                      -- Search space: huge. Two unknown components, unrelated.
+
+button(X)             -- X is a button. It triggers something unknown.
+textInput(Y)          -- Y is a text input. It supplies text for unknown purpose.
+                      -- Search space: smaller. We know the types. But they're
+                      -- still unrelated — X might trigger "delete" while Y
+                      -- supplies a search query.
+
+label(X, "submit")    -- X is a submit button. The idea of "submit" (from the
+                      -- intent universe) attaches to X. This isn't just a
+                      -- display string — it carries semantic weight. "Submit"
+                      -- implies there's something TO submit.
+label(Y, "bio")       -- Y supplies bio text. The idea of "bio" attaches to Y.
+                      -- Search space: much smaller. But X and Y are still
+                      -- formally independent — X could submit something else.
+
+associate(X, Y)       -- NOW we know: what X submits is what Y supplies.
+                      -- "Submit" + "bio" + association = "submit a bio."
+                      -- This is the moment the form emerges. Without
+                      -- associate, they're two labeled widgets. With it,
+                      -- they're a form.
+                      -- Search space: tiny. Just need the endpoint.
+
+action(X, POST /bios) -- X triggers POST /bios with Y's value as the body.
+                      -- Search space: zero. Fully specified.
+```
+
+### Worked example: building a counter
+
+```
+newComponent(D)       -- unknown
+newComponent(A)       -- unknown
+newComponent(B)       -- unknown
+
+display(D)            -- D shows a value
+button(A)             -- A triggers something
+button(B)             -- B triggers something
+
+label(D, "count")     -- D shows the count
+label(A, "increment") -- A triggers increment
+label(B, "decrement") -- B triggers decrement
+
+action(D, read(count))      -- D reads from count state
+action(A, mutate(count, +1)) -- A increments count
+action(B, mutate(count, -1)) -- B decrements count
+```
+
+No `associate` needed — the buttons don't take input from another component. No `each`, `pick`, or `when`. The counter's simplicity shows up as fewer operations and no relational operations.
+
+### Worked example: building the todo filter
+
+```
+newComponent(F1)
+newComponent(F2)
+newComponent(F3)
+
+button(F1); button(F2); button(F3)
+
+label(F1, "All")
+label(F2, "Active")
+label(F3, "Completed")
+
+action(F1, setFilter(:all))
+action(F2, setFilter(:active))
+action(F3, setFilter(:completed))
+
+pick(F1, F2, F3)      -- mutual exclusion: exactly one is active at a time
+```
+
+Here `pick` appears as an assembly operation — it's a *structural* constraint on the relationship between F1, F2, F3. It doesn't fill a hole in any single component; it adds a constraint across components. This is like `associate` but for mutual exclusion rather than value-passing.
