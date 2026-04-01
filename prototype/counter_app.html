@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Yoox Generated App</title>
+<style>
+  body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+  .form-group { display: flex; gap: 8px; margin: 12px 0; }
+  .form-group input { flex: 1; padding: 8px; font-size: 16px; }
+  button { padding: 8px 16px; cursor: pointer; font-size: 14px; }
+  .list-item { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #eee; }
+  .display { margin: 8px 0; color: #555; }
+  .selector { display: flex; gap: 4px; margin: 12px 0; }
+  .selector button { background: #eee; border: 1px solid #ccc; }
+  .selector button.active { background: #4CAF50; color: white; border-color: #4CAF50; }
+  .toggle { cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// === State ===
+const state = {
+  count: 0
+};
+
+// === Derived ===
+function getDerived() {
+  return {};
+}
+
+// === Actions ===
+function action_increment() {
+  state.count++;
+}
+
+function action_decrement() {
+  state.count--;
+}
+
+// === Observe (state + derived) ===
+function observe() {
+  return { ...state, ...getDerived() };
+}
+
+// === Render ===
+function render() {
+  const obs = observe();
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  {
+    const el_display_1 = document.createElement('div');
+    el_display_1.className = 'display';
+    el_display_1.textContent = 'count: ' + JSON.stringify(obs.count);
+    app.appendChild(el_display_1);
+  }
+  {
+    const el_btn_2 = document.createElement('button');
+    el_btn_2.textContent = 'increment';
+    el_btn_2.onclick = () => doAction(() => action_increment());
+    app.appendChild(el_btn_2);
+  }
+  {
+    const el_btn_3 = document.createElement('button');
+    el_btn_3.textContent = 'decrement';
+    el_btn_3.onclick = () => doAction(() => action_decrement());
+    app.appendChild(el_btn_3);
+  }
+}
+
+// === Do (action + re-render) ===
+function doAction(fn) {
+  fn();
+  render();
+}
+
+// Initial render
+render();
+</script>
+</body>
+</html>
