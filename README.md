@@ -79,6 +79,44 @@ Late into the age of web frameworks, the common practice has swung to *not* sepa
 
 Yoox is an attempt to reclaim that dream.
 
+## Try it
+
+```
+npm install
+npm run build
+
+# Build a self-contained HTML app from a trace
+node dist/cli.js build examples/theme.ux -o ./dist-app
+open ./dist-app/index.html
+
+# Or run with live reload
+node dist/cli.js dev examples/todo.ux --port 3000
+
+# Inspect what was inferred from the trace
+node dist/cli.js inspect examples/todo.ux
+
+# Simulate the synthesized app against the trace and report any
+# assertion that fails — this is what verifies that synthesis
+# preserved the UX described by the trace.
+node dist/cli.js verify examples/theme.ux
+```
+
+`examples/theme.ux` is the cleanest example of synthesis-by-observation: every
+action body — increments, decrements, boolean toggles, symbol setters,
+constant resets — is derived from before/after state pairs in the trace, not
+from pattern-matching action names. Run `inspect` and `build` against it and
+look at the generated `index.html` to see what falls out.
+
 ## Status
 
 Experimental / research project. Not ready for production use.
+
+The synthesis pipeline currently handles:
+- numeric updates (constants, deltas, `++`/`--`),
+- boolean toggles,
+- single-arg setters (`state.x = arg`),
+- list-append with structured elements derived from args,
+- todo-style list updates by index (via heuristic fallback for now).
+
+`yoox verify` runs the trace against the synthesized app to catch synthesis
+regressions; `npm test` runs the same checks plus parser/extractor unit tests.

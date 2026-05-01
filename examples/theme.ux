@@ -1,0 +1,45 @@
+# A theme switcher with a few toggles. Synthesized end-to-end by observation
+# inference — no pattern matching on action names.
+
+!GET /
+
+theme == :light;
+fontSize == 14;
+notifications == true;
+muted == false;
+
+# Pick a theme
+setTheme(:dark);
+theme == :dark;
+
+setTheme(:light);
+theme == :light;
+
+# Bump the font size up and down
+biggerFont();
+fontSize == 16;
+biggerFont();
+fontSize == 18;
+smallerFont();
+fontSize == 16;
+
+# Reset jumps directly to the default regardless of current size.
+resetFont();
+fontSize == 14;
+biggerFont();
+biggerFont();
+biggerFont();
+fontSize == 20;
+resetFont();
+fontSize == 14;
+
+# Toggles
+toggleNotifications();
+notifications == false;
+toggleNotifications();
+notifications == true;
+
+toggleMute();
+muted == true;
+toggleMute();
+muted == false;

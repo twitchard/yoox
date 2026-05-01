@@ -34,13 +34,29 @@ export function extract(traceFile: TraceFile): AppModel {
       if (stmt.kind === "action") {
         stateAfterActions++;
 
-        // Register action with params
-        if (!actions.has(stmt.name)) {
+        // Register action with params, or merge param types across calls so
+        // we capture, e.g., the full set of symbol values seen in any call.
+        const existing = actions.get(stmt.name);
+        if (!existing) {
           const params: ActionParam[] = stmt.args.map((arg, i) => ({
             name: paramNameFromArg(arg, i),
             type: inferType(arg),
           }));
           actions.set(stmt.name, { name: stmt.name, params });
+        } else {
+          for (let i = 0; i < stmt.args.length; i++) {
+            if (i >= existing.params.length) {
+              existing.params.push({
+                name: paramNameFromArg(stmt.args[i], i),
+                type: inferType(stmt.args[i]),
+              });
+            } else {
+              existing.params[i].type = mergeTypes(
+                existing.params[i].type,
+                inferType(stmt.args[i])
+              );
+            }
+          }
         }
 
         // Collect constructors from args

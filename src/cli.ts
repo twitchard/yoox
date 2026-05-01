@@ -10,6 +10,7 @@ import { check } from "./analyze/check.js";
 import { synthesize } from "./synthesize/synthesize.js";
 import { generateHTML } from "./generate/html.js";
 import { startDevServer } from "./dev/server.js";
+import { simulate } from "./verify/simulate.js";
 import type { AppModel } from "./analyze/model.js";
 import type { YooxType } from "./analyze/model.js";
 
@@ -128,6 +129,29 @@ function cmdDev(inputPath: string, port: number): void {
   startDevServer(inputPath, buildHTML, port);
 }
 
+function cmdVerify(inputPath: string): void {
+  const source = readInput(inputPath);
+  const traceFile = parse(source);
+  const model = extract(traceFile);
+  const app = synthesize(traceFile, model);
+
+  const result = simulate(traceFile, app);
+
+  console.log(`Verifying ${inputPath}...`);
+  console.log(
+    `  ${result.passedAssertions}/${result.totalAssertions} assertions passed` +
+      (result.failures.length === 0 ? "" : `, ${result.failures.length} failure(s)`)
+  );
+
+  for (const f of result.failures) {
+    console.log(`  [FAIL] trace ${f.traceIndex} step ${f.stepIndex}: ${f.message}`);
+  }
+
+  if (result.failures.length > 0) {
+    process.exit(1);
+  }
+}
+
 function formatType(t: YooxType): string {
   switch (t.kind) {
     case "string":
@@ -158,6 +182,7 @@ yoox — program synthesis of web apps from UX traces
 Usage:
   yoox build <input> [options]    Build a web app from trace files
   yoox check <input>              Validate trace files
+  yoox verify <input>             Simulate traces against the synthesized app
   yoox inspect <input>            Show inferred app model
   yoox dev <input> [options]      Build + serve with live reload
 
@@ -219,6 +244,9 @@ function main(): void {
       break;
     case "check":
       cmdCheck(input);
+      break;
+    case "verify":
+      cmdVerify(input);
       break;
     case "inspect":
       cmdInspect(input);

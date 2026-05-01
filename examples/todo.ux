@@ -49,6 +49,7 @@ filter == :all;
 startEditing(0_visibleTodo);
 editingTodo == 0_visibleTodo;
 setEditLabel("Buy oat milk");
+editDraft == "Buy oat milk";
 saveEdit();
 editingTodo == nil;
 editDraft == nil;
@@ -56,6 +57,7 @@ editDraft == nil;
 # Cancel edit
 startEditing(0_visibleTodo);
 setEditLabel("changed");
+editDraft == "changed";
 cancelEdit();
 editingTodo == nil;
 

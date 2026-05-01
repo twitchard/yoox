@@ -4,6 +4,7 @@
 
 import type { Expr, TraceFile } from "../parse/ast.js";
 import type { AppModel, StateVar } from "../analyze/model.js";
+import { gatherObservations, inferActionBody } from "./infer.js";
 
 export interface ActionImpl {
   name: string;
@@ -29,84 +30,138 @@ export function synthesize(traceFile: TraceFile, model: AppModel): SynthesizedAp
     stateInit[sv.name] = valueToJS(sv.initialValue);
   }
 
-  const actionImpls = model.actions.map((action) =>
-    synthesizeAction(action.name, action.params.map((p) => p.name), traceFile, model)
-  );
-
   const derivedImpls = model.derived.map((d) => synthesizeDerived(d.name, d.derivation, model));
+
+  // Iterative refinement: each pass uses the previous pass's compiled actions
+  // to keep the working state accurate as we walk the trace, which lets the
+  // next pass observe correct pre-states for actions that are called multiple
+  // times in a row without intervening assertions.
+  let actionImpls: ActionImpl[] = synthesizeActionsOnce(traceFile, model, undefined);
+  for (let i = 0; i < 3; i++) {
+    const applier = compileApplier(actionImpls, derivedImpls);
+    const next = synthesizeActionsOnce(traceFile, model, applier);
+    if (sameImpls(next, actionImpls)) break;
+    actionImpls = next;
+  }
 
   return { model, stateInit, actionImpls, derivedImpls };
 }
 
-function synthesizeAction(
-  name: string,
-  params: string[],
+function synthesizeActionsOnce(
   traceFile: TraceFile,
-  model: AppModel
-): ActionImpl {
-  // Heuristic synthesis: look at before/after state in traces to infer the action body
-  // For each trace, find this action call and see what state changed
+  model: AppModel,
+  applier: ((state: Record<string, unknown>, name: string, args: unknown[]) => void) | undefined
+): ActionImpl[] {
+  const observationsByAction = gatherObservations(traceFile, model, applier);
 
-  // Common patterns we recognize:
-  const body = inferActionBody(name, params, traceFile, model);
+  return model.actions.map((action) => {
+    const params = action.params.map((p) => p.name);
+    const observations = observationsByAction.get(action.name) ?? [];
 
-  return { name, params, body };
+    // Patterns inference can't yet handle (list updates by index, edit-mode
+    // state machines that touch multiple state vars in coordinated ways) are
+    // handled by hand-rolled heuristics. For everything else — counter-style
+    // updates, toggles, single-value setters, simple list appends — real
+    // observation-based inference produces the body.
+    const heuristic = heuristicActionBody(action.name, params, model);
+    if (heuristic !== null) {
+      return { name: action.name, params, body: heuristic };
+    }
+
+    const inferred = inferActionBody(params, observations, model);
+    if (inferred) {
+      return { name: action.name, params, body: inferred };
+    }
+
+    return {
+      name: action.name,
+      params,
+      body: `/* ${action.name}: no observations to synthesize from */`,
+    };
+  });
 }
 
-function inferActionBody(
-  name: string,
-  params: string[],
-  traceFile: TraceFile,
-  model: AppModel
-): string {
-  // Analyze traces to find patterns
-  // For each trace, collect: state before action, action args, state after action
+function compileApplier(
+  impls: ActionImpl[],
+  derived: DerivedImpl[]
+): (state: Record<string, unknown>, name: string, args: unknown[]) => void {
+  const fns = new Map<string, (...a: unknown[]) => void>();
+  for (const a of impls) {
+    fns.set(
+      a.name,
+      new Function("state", "resolveIndex", ...a.params, a.body) as (...a: unknown[]) => void
+    );
+  }
+  const resolveIndex = (s: Record<string, unknown>, ref: unknown): number => {
+    if (typeof ref === "number") {
+      const visible =
+        (s.visibleTodos as unknown[] | undefined) ?? (s.todos as unknown[] | undefined);
+      if (!visible) return ref;
+      const target = visible[ref];
+      if (target === undefined) return -1;
+      return (s.todos as unknown[]).indexOf(target);
+    }
+    return -1;
+  };
 
+  return (state, name, args) => {
+    // Re-install derived getters on the working state so action bodies that
+    // read them (e.g. via state.visibleTodos) get current values.
+    for (const d of derived) {
+      const getter = new Function("state", `return ${d.body};`) as (
+        s: Record<string, unknown>
+      ) => unknown;
+      Object.defineProperty(state, d.name, {
+        get: () => getter(state),
+        enumerable: true,
+        configurable: true,
+      });
+    }
+    const fn = fns.get(name);
+    if (!fn) return;
+    fn(state, resolveIndex, ...args);
+  };
+}
+
+function sameImpls(a: ActionImpl[], b: ActionImpl[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].name !== b[i].name || a[i].body !== b[i].body) return false;
+  }
+  return true;
+}
+
+function heuristicActionBody(name: string, params: string[], model: AppModel): string | null {
+  // Only fire when the model looks like a todos-style app. Pure heuristic for
+  // patterns the inference engine can't yet handle (list updates by index,
+  // edit-mode state machines).
   const hasTodos = model.stateVars.some((sv) => sv.name === "todos");
-  const hasCount = model.stateVars.some((sv) => sv.name === "count");
+  if (!hasTodos) return null;
 
-  // Counter patterns
-  if (name === "increment" && hasCount) {
-    return "state.count++;";
-  }
-  if (name === "decrement" && hasCount) {
-    return "state.count--;";
-  }
-
-  // Todo app patterns
-  if (hasTodos) {
-    return inferTodoAction(name, params, model);
-  }
-
-  // Generic: just log unknown actions
-  return `console.log("${name}", ${params.join(", ")});`;
-}
-
-function inferTodoAction(name: string, params: string[], _model: AppModel): string {
   switch (name) {
     case "addTodo":
-      return `const label = ${params[0]}.trim();
-  if (label) {
-    state.todos = [...state.todos, { status: "active", label }];
-  }`;
+      return `const trimmed = ${params[0]}.trim();
+      if (trimmed) {
+        state.todos = [...state.todos, { status: "active", label: trimmed }];
+      }`;
 
     case "markDone":
       return `const idx = resolveIndex(state, ${params[0]});
-  if (idx !== -1) {
-    state.todos = state.todos.map((t, i) => i === idx ? { ...t, status: "completed" } : t);
-  }`;
+      if (idx !== -1) {
+        state.todos = state.todos.map((t, i) => i === idx ? { ...t, status: "completed" } : t);
+      }`;
 
     case "markUndone":
       return `const idx = resolveIndex(state, ${params[0]});
-  if (idx !== -1) {
-    state.todos = state.todos.map((t, i) => i === idx ? { ...t, status: "active" } : t);
-  }`;
+      if (idx !== -1) {
+        state.todos = state.todos.map((t, i) => i === idx ? { ...t, status: "active" } : t);
+      }`;
 
     case "removeTodo":
       return `const idx = resolveIndex(state, ${params[0]});
-  if (idx !== -1) {
-    state.todos = state.todos.filter((_, i) => i !== idx);
-  }`;
+      if (idx !== -1) {
+        state.todos = state.todos.filter((_, i) => i !== idx);
+      }`;
 
     case "markAllDone":
       return `state.todos = state.todos.map(t => ({ ...t, status: "completed" }));`;
@@ -114,42 +169,38 @@ function inferTodoAction(name: string, params: string[], _model: AppModel): stri
     case "markAllUndone":
       return `state.todos = state.todos.map(t => ({ ...t, status: "active" }));`;
 
-    case "setFilter":
-      return `state.filter = ${params[0]};`;
-
     case "clearCompleted":
       return `state.todos = state.todos.filter(t => t.status !== "completed");`;
 
     case "startEditing":
       return `const idx = resolveIndex(state, ${params[0]});
-  if (idx !== -1) {
-    state.editingTodo = idx;
-    state.editDraft = state.todos[idx].label;
-  }`;
-
-    case "setEditLabel":
-      return `state.editDraft = ${params[0]};`;
+      if (idx !== -1) {
+        state.editingTodo = idx;
+        state.editDraft = state.todos[idx].label;
+      }`;
 
     case "saveEdit":
       return `if (state.editingTodo !== null) {
-    const draft = (state.editDraft || "").trim();
-    if (draft) {
-      state.todos = state.todos.map((t, i) =>
-        i === state.editingTodo ? { ...t, label: draft } : t
-      );
-    } else {
-      state.todos = state.todos.filter((_, i) => i !== state.editingTodo);
-    }
-    state.editingTodo = null;
-    state.editDraft = null;
-  }`;
+        const draft = (state.editDraft || "").trim();
+        if (draft) {
+          state.todos = state.todos.map((t, i) =>
+            i === state.editingTodo ? { ...t, label: draft } : t
+          );
+        } else {
+          state.todos = state.todos.filter((_, i) => i !== state.editingTodo);
+        }
+        state.editingTodo = null;
+        state.editDraft = null;
+      }`;
 
     case "cancelEdit":
       return `state.editingTodo = null;
-  state.editDraft = null;`;
+      state.editDraft = null;`;
 
     default:
-      return `console.log("${name}", ${params.join(", ")});`;
+      // setFilter, setEditLabel, and any future trivial setters fall through
+      // to inference, which can derive `state.x = arg0` from observations.
+      return null;
   }
 }
 

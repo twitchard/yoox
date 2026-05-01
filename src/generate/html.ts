@@ -84,6 +84,14 @@ export function generateHTML(app: SynthesizedApp): string {
     .counter-buttons { display: flex; gap: 12px; justify-content: center; }
     .counter-buttons button { font-size: 1.2em; padding: 8px 20px; }
     .bulk-actions { margin-bottom: 8px; }
+    .state { background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; }
+    .state .row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px dashed #eee; }
+    .state .row:last-child { border-bottom: none; }
+    .state .key { color: #666; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .state .val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .actions form { display: inline-flex; gap: 4px; align-items: center; }
+    .actions input { padding: 4px 8px; }
   </style>
 </head>
 <body>
@@ -192,23 +200,79 @@ ${hasFilter ? `
 }
 
 function buildGenericRenderFn(model: AppModel): string {
-  const stateLines = model.stateVars
-    .map((sv) => `'<div><strong>${sv.name}:</strong> ' + JSON.stringify(state.${sv.name}) + '</div>'`)
-    .join(" +\n        ");
+  const stateRows = model.stateVars
+    .map(
+      (sv) =>
+        `'<div class="row"><span class="key">${sv.name}</span>' + ` +
+        `'<span class="val">' + escapeHTML(formatValue(state.${sv.name})) + '</span></div>'`
+    )
+    .join(" + ");
 
-  const actionLines = model.actions
-    .map((a) => {
-      if (a.params.length === 0) {
-        return `'<button onclick="${a.name}()">${a.name}</button>'`;
-      }
-      return `'<button onclick="${a.name}()">${a.name}</button>'`;
-    })
-    .join(" +\n        ");
+  const actionControls = model.actions
+    .map((a) => buildActionControl(a, model))
+    .join(" + ");
 
-  return `    function render() {
+  return `    function formatValue(v) {
+      if (v === null || v === undefined) return "nil";
+      if (typeof v === "string") return v;
+      return JSON.stringify(v);
+    }
+
+    function render() {
       document.getElementById("app").innerHTML =
         '<h1>App</h1>' +
-        ${stateLines || "''"} +
-        '<div style="margin-top:12px">' + ${actionLines || "''"} + '</div>';
+        '<div class="state">' + ${stateRows || "''"} + '</div>' +
+        '<div class="actions">' + ${actionControls || "''"} + '</div>';
     }`;
+}
+
+function buildActionControl(action: import("../analyze/model.js").Action, model: AppModel): string {
+  const label = humanize(action.name);
+
+  // Zero-arg action — single button.
+  if (action.params.length === 0) {
+    return `'<button onclick="${action.name}()">${label}</button>'`;
+  }
+
+  // Single symbol param — render one button per known symbol value.
+  if (action.params.length === 1) {
+    const p = action.params[0];
+    if (p.type.kind === "symbol" && p.type.values.length > 0) {
+      const buttons = p.type.values
+        .map(
+          (v) =>
+            `'<button onclick="${action.name}(\\'${v}\\')">${humanize(action.name)}: ${v}</button>'`
+        )
+        .join(" + ");
+      return buttons;
+    }
+    if (p.type.kind === "string") {
+      return (
+        `'<form onsubmit="event.preventDefault();var i=this.querySelector(\\'input\\');${action.name}(i.value);i.value=\\'\\';">'` +
+        ` + '<input type="text" placeholder="${p.name}">' ` +
+        `+ '<button type="submit">${label}</button></form>'`
+      );
+    }
+    if (p.type.kind === "number") {
+      return (
+        `'<form onsubmit="event.preventDefault();var i=this.querySelector(\\'input\\');${action.name}(parseFloat(i.value));i.value=\\'\\';">'` +
+        ` + '<input type="number" placeholder="${p.name}">' ` +
+        `+ '<button type="submit">${label}</button></form>'`
+      );
+    }
+    if (p.type.kind === "bool") {
+      return `'<button onclick="${action.name}(true)">${label}: true</button>' + '<button onclick="${action.name}(false)">${label}: false</button>'`;
+    }
+  }
+
+  // Fallback — disabled button noting the action exists but isn't directly
+  // invocable from the auto-generated UI.
+  return `'<button disabled title="${action.params.length}-arg action not yet auto-rendered">${label}</button>'`;
+}
+
+function humanize(name: string): string {
+  return name
+    .replace(/([A-Z])/g, " $1")
+    .replace(/^./, (c) => c.toUpperCase())
+    .trim();
 }
